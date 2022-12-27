@@ -34,8 +34,6 @@ public class WordNode implements Comparable<WordNode> {
         this.frequency = frequency;
         random = new Random();
         nextWords = new ArrayList<>();
-        if(!word.equals(""))
-            nextWords.add(new WordNode("", 1));
     }
 
     public WordNode pickNextRandom() {
@@ -50,6 +48,7 @@ public class WordNode implements Comparable<WordNode> {
             else
                 ranges.add(node.getFrequency());
         }
+        length = Math.max(1, length);
 
         assert(ranges.size() == nextWords.size());
 
@@ -85,6 +84,22 @@ public class WordNode implements Comparable<WordNode> {
         return res;
     }
 
+    public String toReadableString() {
+        return toReadableString(0);
+    }
+
+    private String toReadableString(int depth) {
+        String res = "";
+        for(int i = 0; i < depth; i++) {
+            res += "\t";
+        }
+        res += word + "," + frequency + "\n";
+        for(WordNode node : nextWords) {
+            res += node.toReadableString(depth + 1);
+        }
+        return res;
+    }
+
     /* Getters */
     public String getWord() {
         return word;
@@ -110,6 +125,10 @@ public class WordNode implements Comparable<WordNode> {
             }
         }
         return null;
+    }
+
+    public List<WordNode> getNextWords() {
+        return nextWords;
     }
 
     /* true iff nextWords.size() == 1, as this means the only string is blank placeholder text */

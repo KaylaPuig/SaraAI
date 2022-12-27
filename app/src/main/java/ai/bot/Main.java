@@ -4,8 +4,10 @@ import ai.bot.api.WordNode;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
 
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
@@ -63,7 +65,11 @@ public class Main implements EventListener, Runnable {
 	public void onEvent(GenericEvent event) {
 		if (event instanceof ReadyEvent) {
 			System.out.println("API is ready!");
+			System.out.println("=========");
+			System.out.println(rootNode.toReadableString());
+			System.out.println("=========");
 			System.out.println(rootNode);
+			System.out.println("=========\n\n");
 		}
 
 		if (event instanceof MessageReceivedEvent) {
@@ -78,23 +84,27 @@ public class Main implements EventListener, Runnable {
 				return;
 			}
 
-			if (messageStr.equals("sara.generate")) {
+			if (messageStr.startsWith("sara.g")) {
 				if(rootNode.isEmpty()) {
 					message.reply("Please send more messages to allow me to generate messages!");
 				}
 				else {
 					String res = "";
-					WordNode curNode = rootNode;
+					// Pick starting word
+					WordNode tempNode = rootNode;
 					while(res.equals("")) {
-						curNode = rootNode.pickNextRandom();
-						if(curNode != null)
-							res += curNode.getWord();
+						tempNode = rootNode.pickNextRandom();
+						if(tempNode != null)
+							res += tempNode.getWord();
 					}
 					res += " ";
-					while(curNode != null && !curNode.getWord().equals("")) {
-						curNode = curNode.pickNextRandom();
-						if(curNode != null)
-							res += curNode.getWord() + " ";
+					// Pick next until reaching the end
+					while(tempNode != null && !tempNode.getWord().equals("")) {
+						tempNode = tempNode.pickNextRandom();
+						if(tempNode != null)
+							res += tempNode.getWord() + " ";
+						if(tempNode != null)
+							tempNode = rootNode.getWordNode(tempNode.getWord());
 					}
 					message.reply(res).submit();
 				}
@@ -103,25 +113,36 @@ public class Main implements EventListener, Runnable {
 
 			/* If all other conditions not met and the message is not from the bot, then it's a normal message to learn from */
 			if(!message.getAuthor().getId().equals(event.getJDA().getSelfUser().getId())) {
-				WordNode currentNode = rootNode;
-				for(int i = 0; i < words.length; i++) {
-					currentNode.addWordNode(words[i], 1);
-					currentNode = currentNode.getWordNode(words[i]);
+				for(int i = 0; i < words.length - 1; i++) {
+					rootNode.addWordNode(words[i], 1);
+					rootNode.getWordNode(words[i]).addWordNode(words[i + 1], 1);
+					rootNode.addWordNode(words[i + 1], 1);
+				}
+				if(words.length == 1) {
+					rootNode.addWordNode(words[0], 1);
 				}
 			}
 
+			System.out.println("=========");
+			System.out.println(rootNode.toReadableString());
+			System.out.println("=========");
 			System.out.println(rootNode);
+			System.out.println("=========\n\n");
 		}
 	}
 
 	@Override
 	public void run() {
 		while (true) {
-			// TODO determine the usefulness of a constantly-running thread for this bot
-
 			try {
-				Thread.sleep(750);
-			} catch (InterruptedException e) {
+				// Save current data to file
+				File aiOutputFile = new File("aidata.txt");
+				FileOutputStream aiOutputStream = new FileOutputStream(aiOutputFile, false);
+				aiOutputStream.write(rootNode.toString().getBytes());
+				aiOutputStream.close();
+			
+				Thread.sleep(10000); // Sleep 10 seconds
+			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
