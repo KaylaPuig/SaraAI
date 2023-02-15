@@ -2,7 +2,7 @@ package ai.bot.api;
 
 import java.util.Comparator;
 
-public class WordNodeComparator implements Comparator<WordNode> {
+class WordNodeComparator implements Comparator<WordNode> {
 
     @Override
     public int compare(WordNode arg0, WordNode arg1) {

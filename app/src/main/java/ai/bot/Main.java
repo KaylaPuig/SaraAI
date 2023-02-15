@@ -1,18 +1,18 @@
 package ai.bot;
 
-import ai.bot.api.WordNode;
+import ai.bot.api.WordTree;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.Map.Entry;
 
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.Message;
-import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.events.GenericEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
@@ -21,7 +21,7 @@ import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.cache.CacheFlag;
 
 public class Main implements EventListener, Runnable {
-	private WordNode rootNode;
+	private HashMap<String, WordTree> guildWords;
 
 	public static void main(String[] args) throws InterruptedException, IOException {
 		// Debug
@@ -58,76 +58,86 @@ public class Main implements EventListener, Runnable {
 	}
 
 	public Main() {
-		rootNode = new WordNode(new File("aidata.txt"));
+		guildWords = new HashMap<String, WordTree>();
+	}
+
+	public boolean loadAiJSONs()
+	{
+		File thisDir = new File(".");
+		File[] thisDirArray = thisDir.listFiles();
+
+		if (thisDirArray == null)
+			return false;
+
+		for (File child : thisDirArray)
+		{
+			String childName = child.getName();
+
+			int prefixIndex = childName.indexOf("aidata-");
+			if (prefixIndex < 0)
+				continue;
+
+			String guildId = childName.substring(prefixIndex + "aidata-".length());
+
+			int suffixIndex = guildId.indexOf(".json");
+			if (suffixIndex < 0)
+				continue;
+			
+			guildId = guildId.substring(0, suffixIndex);
+			for (char c : guildId.toCharArray())
+				if (c < '0' || c > '9')
+					return false;
+
+			guildWords.put(guildId, new WordTree(child));
+		}
+
+		return true;
 	}
 
 	@Override
 	public void onEvent(GenericEvent event) {
 		if (event instanceof ReadyEvent) {
 			System.out.println("API is ready!");
-			System.out.println("=========");
-			System.out.println(rootNode.toReadableString());
-			System.out.println("=========");
-			System.out.println(rootNode);
-			System.out.println("=========\n\n");
+			System.out.println("Loading JSONs");
+			if (loadAiJSONs())
+			{
+				System.out.println("Success!");
+			}
+			else
+			{
+				System.out.println("Failed to load JSONs.");
+			}
 		}
 
 		if (event instanceof MessageReceivedEvent) {
 			Message message = ((MessageReceivedEvent) event).getMessage();
 			String messageStr = message.getContentRaw();
-			//String guildChannelId = message.getGuildChannel().getId();
-
-			String[] words = messageStr.split(" ");
+			WordTree messageGuildTree = guildWords.getOrDefault(message.getGuild().getId(), null);
+			if (messageGuildTree == null)
+			{
+				messageGuildTree = new WordTree();
+				guildWords.put(message.getGuild().getId(), messageGuildTree);
+			}
 
 			if (messageStr.equals("sara.help")) {
 				message.reply("Hello! My only semi-working command is `sara.generate`, so come on! Try me!").submit();
 				return;
 			}
 
-			if (messageStr.startsWith("sara.g")) {
-				if(rootNode.isEmpty()) {
+			if (messageStr.startsWith("sara.g") && "sara.generate".startsWith(messageStr)) {
+				if(messageGuildTree.isEmpty()) {
 					message.reply("Please send more messages to allow me to generate messages!");
 				}
 				else {
-					String res = "";
-					// Pick starting word
-					WordNode tempNode = rootNode;
-					while(res.equals("")) {
-						tempNode = rootNode.pickNextRandom();
-						if(tempNode != null)
-							res += tempNode.getWord();
-					}
-					res += " ";
-					// Pick next until reaching the end
-					while(tempNode != null && !tempNode.getWord().equals("")) {
-						tempNode = tempNode.pickNextRandom();
-						if(tempNode != null)
-							res += tempNode.getWord() + " ";
-						if(tempNode != null)
-							tempNode = rootNode.getWordNode(tempNode.getWord());
-					}
-					message.reply(res).submit();
+					message.reply(messageGuildTree.generateSentence()).submit();
 				}
 				return;
 			}
 
 			/* If all other conditions not met and the message is not from the bot, then it's a normal message to learn from */
 			if(!message.getAuthor().getId().equals(event.getJDA().getSelfUser().getId())) {
-				for(int i = 0; i < words.length - 1; i++) {
-					rootNode.addWordNode(words[i], 1);
-					rootNode.getWordNode(words[i]).addWordNode(words[i + 1], 1);
-					rootNode.addWordNode(words[i + 1], 1);
-				}
-				if(words.length == 1) {
-					rootNode.addWordNode(words[0], 1);
-				}
+				messageGuildTree.addSentence(messageStr);
 			}
-
-			System.out.println("=========");
-			System.out.println(rootNode.toReadableString());
-			System.out.println("=========");
-			System.out.println(rootNode);
-			System.out.println("=========\n\n");
 		}
 	}
 
@@ -135,14 +145,20 @@ public class Main implements EventListener, Runnable {
 	public void run() {
 		while (true) {
 			try {
-				// Save current data to file
-				File aiOutputFile = new File("aidata.txt");
-				FileOutputStream aiOutputStream = new FileOutputStream(aiOutputFile, false);
-				aiOutputStream.write(rootNode.toString().getBytes());
-				aiOutputStream.close();
+				// Save current data to files
+				for (Entry<String, WordTree> entry : guildWords.entrySet())
+				{
+					File aiOutputFile = new File("aidata-" + entry.getKey() + ".json");
+					FileOutputStream aiOutputStream = new FileOutputStream(aiOutputFile, false);
+					aiOutputStream.write(entry.getValue().toData().getBytes());
+					aiOutputStream.close();
+					System.out.println("Success saving to " + "aidata-" + entry.getKey() + ".json" + "!");
+				}
+				System.out.println();
 			
-				Thread.sleep(10000); // Sleep 10 seconds
+				Thread.sleep(30000); // Sleep 30 seconds
 			} catch (Exception e) {
+				System.err.println("Error saving data...");
 				e.printStackTrace();
 			}
 		}
